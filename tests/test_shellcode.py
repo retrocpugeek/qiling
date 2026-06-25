@@ -10,6 +10,8 @@ sys.path.append("..")
 
 from qiling import Qiling
 from qiling.const import QL_ARCH, QL_OS, QL_INTERCEPT, QL_VERBOSE, QL_ENDIAN
+from qiling.arch.models import MIPS64_CPU_MODEL
+from qiling.exception import QlErrorCoreHook
 
 
 # test = bytes.fromhex('cccc')
@@ -37,6 +39,12 @@ MIPS64EL_LIN = bytes.fromhex('''
     891302240100042401001104000000001800e5670d0006240c00000055140224
     000004240c0000004d49505336342068656c6c6f0a
 ''')
+
+# Cavium Octeon (cnMIPS) probe (big-endian): ori $a0, $zero, 0xab ; exts $v0, $a0, 0, 7
+# `exts` sign-extends a0's low 8 bits (0xab -> 0xff..ffab) into v0. It is an Octeon
+# instruction, so it only decodes under the Octeon-Plus CPU model; on a plain MIPS64
+# core it raises a reserved-instruction trap.
+MIPS64EB_OCTEON_EXTS = bytes.fromhex('340400ab7082383a')
 
 X86_WIN = bytes.fromhex('''
     fce8820000006089e531c0648b50308b520c8b52148b72280fb74a2631ffac3c
@@ -130,6 +138,24 @@ class TestShellcode(unittest.TestCase):
         print("Linux MIPS 64bit EL Shellcode")
         ql = Qiling(code=MIPS64EL_LIN, archtype=QL_ARCH.MIPS64, ostype=QL_OS.LINUX, endian=QL_ENDIAN.EL, verbose=QL_VERBOSE.OFF)
         ql.run()
+
+    def test_linux_mips64eb_octeon_exts(self):
+        print("Linux MIPS 64bit EB Octeon-Plus Shellcode")
+
+        # MIPS64_OCTEON_PLUS selects unicorn's Octeon-Plus core, enabling the
+        # cnMIPS instruction set; `exts` then decodes and sign-extends a0's low
+        # 8 bits (0xab) into v0.
+        ql = Qiling(code=MIPS64EB_OCTEON_EXTS, archtype=QL_ARCH.MIPS64, ostype=QL_OS.LINUX,
+                    endian=QL_ENDIAN.EB, cputype=MIPS64_CPU_MODEL.MIPS64_OCTEON_PLUS, verbose=QL_VERBOSE.OFF)
+        ql.run()
+        self.assertEqual(ql.arch.regs.read('v0'), 0xffffffffffffffab)
+
+        # without the Octeon core the same `exts` is an unknown instruction and
+        # traps as reserved (surfaces as an unhandled interrupt)
+        ql = Qiling(code=MIPS64EB_OCTEON_EXTS, archtype=QL_ARCH.MIPS64, ostype=QL_OS.LINUX,
+                    endian=QL_ENDIAN.EB, cputype=MIPS64_CPU_MODEL.MIPS64_MIPS64R2_GENERIC, verbose=QL_VERBOSE.OFF)
+        with self.assertRaises(QlErrorCoreHook):
+            ql.run()
 
     # This shellcode needs to be changed to something non-blocking
     def test_linux_arm(self):
