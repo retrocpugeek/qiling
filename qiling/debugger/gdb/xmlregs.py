@@ -147,6 +147,7 @@ class QlGdbFeatures:
             QL_ARCH.CORTEX_M: dict(**cortex_m_regs),
             QL_ARCH.ARM64:    dict(**arm64_regs, **arm64_regs_v, **arm64_reg_map_fp),
             QL_ARCH.MIPS:     dict(**mips_regs_gpr),
+            QL_ARCH.MIPS64:   dict(**mips_regs_gpr),
             QL_ARCH.PPC:      dict(**ppc_regs)
         }[archtype]
 
